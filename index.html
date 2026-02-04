@@ -1,6 +1,117 @@
-Gėlių lojalumo kortelė 🌸
-Nuskenuok, kauptk apsilankymus ir gauk dovaną.
-0 / 5
-6-as: -50%
+<!doctype html>
+<html lang="lt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gėlių lojalumo kortelė</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;margin:0;background:#fafafa;color:#111}
+    .wrap{max-width:520px;margin:0 auto;padding:20px}
+    .card{background:#fff;border:1px solid #e6e6e6;border-radius:16px;padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.04)}
+    h1{font-size:22px;margin:0 0 8px}
+    .sub{color:#666;margin:0 0 14px;line-height:1.35}
+    .row{display:flex;justify-content:space-between;align-items:center;margin:14px 0;gap:10px;flex-wrap:wrap}
+    .pill{background:#f2f2f2;border-radius:999px;padding:6px 10px;font-weight:600}
+    .stamps{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:14px 0}
+    .stamp{height:54px;border-radius:12px;border:2px dashed #ddd;display:flex;align-items:center;justify-content:center;font-size:20px}
+    .stamp.on{border-style:solid;border-color:#111}
+    .btn{width:100%;border:0;border-radius:12px;padding:14px 12px;font-size:16px;font-weight:700;cursor:pointer}
+    .btn.primary{background:#111;color:#fff}
+    .btn.ghost{background:#fff;border:1px solid #ddd;color:#111;margin-top:10px}
+    .small{font-size:12px;color:#777;margin-top:10px;line-height:1.35}
+    .hr{height:1px;background:#eee;margin:14px 0}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1 id="shopTitle">Gėlių lojalumo kortelė 🌸</h1>
+    <p class="sub" id="shopSub">Nuskenuok, kauptk apsilankymus ir gauk dovaną.</p>
 
-MVP testui: tai veikia naršyklėje ir saugo progresą telefone (localStorage). Jei žmogus išvalo naršyklės duomenis – progresas dingsta (Variantas 3).
+    <div class="row">
+      <div class="pill" id="progress">0 / 5</div>
+      <div class="pill" id="reward">6-as: -50%</div>
+    </div>
+
+    <div class="stamps" id="stamps"></div>
+
+    <div class="hr"></div>
+
+    <!-- Pardavėjo režimas -->
+    <div id="staffBox" class="hidden">
+      <button class="btn primary" id="addBtn">+ Pridėti 1 stampą (pardavėjui)</button>
+      <button class="btn ghost" id="undoBtn">Atšaukti paskutinį</button>
+      <p class="small">
+        Pardavėjo režimas įsijungia su nuoroda: <b>&amp;staff=1</b>.<br/>
+        Jeigu nori, pridėsim PIN, kad klientai neprisispaudinėtų 😉
+      </p>
+    </div>
+
+    <p class="small">
+      MVP testui: progresas saugomas telefone (localStorage). Jei žmogus išvalo naršyklės duomenis – progresas dingsta (Variantas 3).
+    </p>
+  </div>
+</div>
+
+<script>
+(function(){
+  const params = new URLSearchParams(location.search);
+
+  // Parduotuvės identifikatorius (vienas puslapis gali aptarnauti kelias vietas)
+  const shop = (params.get('shop') || 'demo').toLowerCase().replace(/[^a-z0-9_-]/g,'');
+  const shopName = params.get('name') || 'Gėlės';
+  const rewardText = params.get('reward') || '6-as: -50%';
+  const target = 5; // kiek stampų reikia iki dovanos
+
+  document.getElementById('shopTitle').textContent = shopName + ' lojalumo kortelė 🌸';
+  document.getElementById('reward').textContent = rewardText;
+
+  const key = `loyalty:${shop}:stamps`;
+  let stamps = parseInt(localStorage.getItem(key) || '0', 10);
+  if (Number.isNaN(stamps) || stamps < 0) stamps = 0;
+
+  function render(){
+    document.getElementById('progress').textContent = `${Math.min(stamps, target)} / ${target}`;
+    const box = document.getElementById('stamps');
+    box.innerHTML = '';
+    for (let i=1;i<=target;i++){
+      const d = document.createElement('div');
+      d.className = 'stamp' + (i <= stamps ? ' on' : '');
+      d.textContent = i <= stamps ? '✓' : '';
+      box.appendChild(d);
+    }
+    if (stamps >= target){
+      document.getElementById('shopSub').textContent = 'Jau turi dovaną! Parodyk pardavėjui 💥';
+    } else {
+      document.getElementById('shopSub').textContent = 'Kaupk apsilankymus — dovana vis arčiau 😉';
+    }
+  }
+
+  // Pardavėjo režimas
+  const staff = params.get('staff') === '1';
+  if (staff) document.getElementById('staffBox').classList.remove('hidden');
+
+  // Mygtukai egzistuoja visada, bet veikia tik staff režime (kad nebūtų klaidų)
+  const addBtn = document.getElementById('addBtn');
+  const undoBtn = document.getElementById('undoBtn');
+
+  addBtn.addEventListener('click', () => {
+    if (!staff) return;
+    stamps = Math.min(stamps + 1, target);
+    localStorage.setItem(key, String(stamps));
+    render();
+  });
+
+  undoBtn.addEventListener('click', () => {
+    if (!staff) return;
+    stamps = Math.max(stamps - 1, 0);
+    localStorage.setItem(key, String(stamps));
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
