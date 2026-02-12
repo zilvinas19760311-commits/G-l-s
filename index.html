@@ -21,18 +21,17 @@
     .small{font-size:12px;color:#777;margin-top:8px}
     .ok{color:green;font-weight:700}
     .err{color:red;font-weight:700}
-    hr{border:0;border-top:1px solid #eee;margin:16px 0}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>Gėlių lojalumo kortelė 🌸</h1>
+    <h1 id="title">Gėlių lojalumo kortelė 🌸</h1>
     <p class="sub" id="sub">Kaupk apsilankymus ir gauk dovaną.</p>
 
     <div class="row">
       <div class="pill" id="progress">0 / 5</div>
-      <div class="pill" id="reward">6-as: -50%</div>
+      <div class="pill" id="rewardPill">6-as: -50%</div>
     </div>
 
     <div class="stamps" id="stamps"></div>
@@ -41,7 +40,7 @@
 
     <div>
       <div class="small"><b>Telefono numeris (nebūtina)</b></div>
-      <input id="phone" placeholder="+3706xxxxxxx" inputmode="tel" autocomplete="tel">
+      <input id="phone" placeholder="+3706xxxxxxx">
       <button class="btn primary" id="savePhone">Išsaugoti</button>
       <div id="msg" class="small"></div>
     </div>
@@ -49,7 +48,7 @@
     <div id="staff" style="display:none;">
       <hr>
       <div class="small"><b>Pardavėjo režimas</b></div>
-      <input id="pin" placeholder="PIN" inputmode="numeric" autocomplete="one-time-code">
+      <input id="pin" placeholder="PIN">
       <button class="btn primary" id="add">+ Pridėti 1 apsilankymą</button>
       <div id="staffMsg" class="small"></div>
     </div>
@@ -66,52 +65,42 @@ const SUPABASE_URL = "https://omxevzobieebtfuxgrak.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_3c2dqCHnIQVCjPDhWsOwDw_MeHKgJHB";
 
 const FN_GET_OR_CREATE = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/get_or_create_card";
-const FN_ADD_STAMP     = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/add_stamp";
+const FN_ADD_STAMP = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/add_stamp";
 
 /* ============================= */
 
 const params = new URLSearchParams(location.search);
 const SHOP = (params.get("shop") || "geles").toLowerCase();
+const SHOP_NAME = params.get("name") || "Gėlės";
+const REWARD_TEXT = params.get("reward") || "6-as: -50%";
+const TARGET = Number(params.get("target") || 5) || 5;
 const STAFF = params.get("staff") === "1";
+
+document.getElementById("title").textContent = SHOP_NAME + " lojalumo kortelė 🌸";
+document.getElementById("rewardPill").textContent = REWARD_TEXT;
+
+if (STAFF) document.getElementById("staff").style.display = "block";
 
 const stampsEl = document.getElementById("stamps");
 const progressEl = document.getElementById("progress");
 const subEl = document.getElementById("sub");
-const rewardEl = document.getElementById("reward");
+const phoneEl = document.getElementById("phone");
 const msgEl = document.getElementById("msg");
-const staffBox = document.getElementById("staff");
 const staffMsgEl = document.getElementById("staffMsg");
 
+const LS_PHONE_KEY = `loyalty:${SHOP}:phone`;
 let cardId = null;
-let target = 5;
-let rewardText = "6-as: -50%";
-
-if (STAFF) staffBox.style.display = "block";
 
 function render(stamps){
   stampsEl.innerHTML = "";
-  for(let i=1;i<=target;i++){
+  for(let i=1;i<=TARGET;i++){
     const d = document.createElement("div");
     d.className = "stamp" + (i <= stamps ? " on" : "");
     d.innerText = i <= stamps ? "✓" : "";
     stampsEl.appendChild(d);
   }
-  progressEl.innerText = stamps + " / " + target;
-  rewardEl.innerText = rewardText;
-
-  if(stamps >= target){
-    subEl.innerText = "🎉 Dovana paruošta!";
-  } else {
-    subEl.innerText = "Kaupk apsilankymus ir gauk dovaną.";
-  }
-}
-
-function normPhone(raw){
-  const v = (raw || "").trim();
-  if(!v) return null;
-  // labai paprasta normalizacija: paliekam + ir skaičius
-  const cleaned = v.replace(/[^\d+]/g,"");
-  return cleaned || null;
+  progressEl.innerText = stamps + " / " + TARGET;
+  subEl.innerText = stamps >= TARGET ? "🎉 Dovana paruošta!" : "Kaupk apsilankymus ir gauk dovaną.";
 }
 
 async function api(url, body){
@@ -126,71 +115,82 @@ async function api(url, body){
   });
 
   const text = await res.text();
+  if (!res.ok) throw new Error(res.status + " " + res.statusText + " | " + text);
 
-  if(!res.ok){
-    throw new Error(res.status + " " + res.statusText + " | " + text);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error("Ne JSON atsakymas: " + text);
-  }
+  try { return JSON.parse(text); }
+  catch { throw new Error("Ne JSON atsakymas: " + text); }
 }
 
 async function load(phone){
-  const data = await api(FN_GET_OR_CREATE, {
+  const data = await api(FN_GET_OR_CREATE,{
     shop: SHOP,
-    phone: phone,
-    target: 5,
-    reward: rewardText
+    phone: phone || null,
+    target: TARGET,
+    reward: REWARD_TEXT
   });
 
-  if(!data || !data.card) throw new Error("Nėra kortelės atsakyme");
-
-  cardId = data.card.id;
-  target = data.card.target ?? 5;
-
+  // jei telefono nėra, data.card.id gali būti null (tavo funkcijoje taip padaryta)
+  cardId = data.card.id || null;
   render(Number(data.card.stamps || 0));
 }
 
-document.getElementById("savePhone").onclick = async () => {
-  msgEl.innerHTML = "";
-  const phone = normPhone(document.getElementById("phone").value);
+/* ✅ AUTOMATINIS UŽKROVIMAS KLIENTUI */
+(async function init(){
+  render(0); // kad visada matytų “dėžutes”
+  const savedPhone = (localStorage.getItem(LS_PHONE_KEY) || "").trim();
+  if (savedPhone){
+    phoneEl.value = savedPhone;
+    try{
+      await load(savedPhone);
+      msgEl.innerHTML = "";
+    }catch(e){
+      msgEl.innerHTML = "<span class='err'>Klaida: nepavyko užkrauti</span>";
+    }
+  }
+})();
 
+document.getElementById("savePhone").onclick = async () => {
+  const phone = phoneEl.value.trim();
   try{
-    await load(phone);
+    if (phone) localStorage.setItem(LS_PHONE_KEY, phone);
+    await load(phone || null);
     msgEl.innerHTML = "<span class='ok'>Išsaugota</span>";
   }catch(e){
-    msgEl.innerHTML = "<span class='err'>Klaida: " + (e?.message || e) + "</span>";
+    msgEl.innerHTML = "<span class='err'>Klaida: " + String(e.message || e) + "</span>";
   }
 };
 
 document.getElementById("add").onclick = async () => {
-  staffMsgEl.innerHTML = "";
-  const pin = (document.getElementById("pin").value || "").trim();
+  const pin = document.getElementById("pin").value.trim();
 
-  if(!cardId){
-    staffMsgEl.innerHTML = "<span class='err'>Pirma sukurk kortelę (įvesk tel. arba palik tuščią ir spausk „Išsaugoti“)</span>";
-    return;
-  }
-  if(!pin){
-    staffMsgEl.innerHTML = "<span class='err'>Įvesk PIN</span>";
+  // Pardavėjas turi turėti kortelę (kliento numerį)
+  const phone = phoneEl.value.trim();
+  if (!phone){
+    staffMsgEl.innerHTML = "<span class='err'>Įvesk kliento tel. numerį</span>";
     return;
   }
 
   try{
-    const data = await api(FN_ADD_STAMP, { card_id: cardId, pin });
-    if(!data || !data.card) throw new Error("Nėra kortelės atsakyme");
+    // 1) užtikrinam, kad kortelė egzistuoja ir gaunam cardId
+    await load(phone);
+
+    if(!cardId){
+      staffMsgEl.innerHTML = "<span class='err'>Nepavyko gauti kortelės ID</span>";
+      return;
+    }
+
+    // 2) pridedam štampą
+    const data = await api(FN_ADD_STAMP,{
+      card_id: cardId,
+      pin
+    });
+
     render(Number(data.card.stamps || 0));
     staffMsgEl.innerHTML = "<span class='ok'>Pridėta</span>";
   }catch(e){
-    staffMsgEl.innerHTML = "<span class='err'>Klaida: " + (e?.message || e) + "</span>";
+    staffMsgEl.innerHTML = "<span class='err'>Klaida: " + String(e.message || e) + "</span>";
   }
 };
-
-// užkraunam UI iš karto (be telefono)
-load(null).catch(()=>{ render(0); });
 </script>
 </body>
 </html>
