@@ -21,6 +21,7 @@
     .small{font-size:12px;color:#777;margin-top:8px}
     .ok{color:green;font-weight:700}
     .err{color:red;font-weight:700}
+    hr{border:0;border-top:1px solid #eee;margin:16px 0}
   </style>
 </head>
 <body>
@@ -31,7 +32,7 @@
 
     <div class="row">
       <div class="pill" id="progress">0 / 5</div>
-      <div class="pill">6-as: -50%</div>
+      <div class="pill" id="reward">6-as: -50%</div>
     </div>
 
     <div class="stamps" id="stamps"></div>
@@ -40,7 +41,7 @@
 
     <div>
       <div class="small"><b>Telefono numeris (nebūtina)</b></div>
-      <input id="phone" placeholder="+3706xxxxxxx">
+      <input id="phone" placeholder="+3706xxxxxxx" inputmode="tel" autocomplete="tel">
       <button class="btn primary" id="savePhone">Išsaugoti</button>
       <div id="msg" class="small"></div>
     </div>
@@ -48,7 +49,7 @@
     <div id="staff" style="display:none;">
       <hr>
       <div class="small"><b>Pardavėjo režimas</b></div>
-      <input id="pin" placeholder="PIN">
+      <input id="pin" placeholder="PIN" inputmode="numeric" autocomplete="one-time-code">
       <button class="btn primary" id="add">+ Pridėti 1 apsilankymą</button>
       <div id="staffMsg" class="small"></div>
     </div>
@@ -65,24 +66,27 @@ const SUPABASE_URL = "https://omxevzobieebtfuxgrak.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_3c2dqCHnIQVCjPDhWsOwDw_MeHKgJHB";
 
 const FN_GET_OR_CREATE = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/get_or_create_card";
-const FN_ADD_STAMP = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/add_stamp";
+const FN_ADD_STAMP     = "https://omxevzobieebtfuxgrak.supabase.co/functions/v1/add_stamp";
 
 /* ============================= */
 
 const params = new URLSearchParams(location.search);
-const SHOP = params.get("shop") || "geles";
+const SHOP = (params.get("shop") || "geles").toLowerCase();
 const STAFF = params.get("staff") === "1";
-
-if(STAFF){
-  document.getElementById("staff").style.display = "block";
-}
 
 const stampsEl = document.getElementById("stamps");
 const progressEl = document.getElementById("progress");
 const subEl = document.getElementById("sub");
+const rewardEl = document.getElementById("reward");
+const msgEl = document.getElementById("msg");
+const staffBox = document.getElementById("staff");
+const staffMsgEl = document.getElementById("staffMsg");
 
 let cardId = null;
 let target = 5;
+let rewardText = "6-as: -50%";
+
+if (STAFF) staffBox.style.display = "block";
 
 function render(stamps){
   stampsEl.innerHTML = "";
@@ -93,9 +97,21 @@ function render(stamps){
     stampsEl.appendChild(d);
   }
   progressEl.innerText = stamps + " / " + target;
+  rewardEl.innerText = rewardText;
+
   if(stamps >= target){
     subEl.innerText = "🎉 Dovana paruošta!";
+  } else {
+    subEl.innerText = "Kaupk apsilankymus ir gauk dovaną.";
   }
+}
+
+function normPhone(raw){
+  const v = (raw || "").trim();
+  if(!v) return null;
+  // labai paprasta normalizacija: paliekam + ir skaičius
+  const cleaned = v.replace(/[^\d+]/g,"");
+  return cleaned || null;
 }
 
 async function api(url, body){
@@ -109,56 +125,72 @@ async function api(url, body){
     body: JSON.stringify(body)
   });
 
- const text = await res.text();
+  const text = await res.text();
 
-if (!res.ok) {
-  throw new Error(res.status + " " + res.statusText + " | " + text);
-}
+  if(!res.ok){
+    throw new Error(res.status + " " + res.statusText + " | " + text);
+  }
 
-try {
-  return JSON.parse(text);
-} catch {
-  throw new Error("Ne JSON atsakymas: " + text);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Ne JSON atsakymas: " + text);
+  }
 }
 
 async function load(phone){
-  const data = await api(FN_GET_OR_CREATE,{
+  const data = await api(FN_GET_OR_CREATE, {
     shop: SHOP,
-    phone: phone || null,
+    phone: phone,
     target: 5,
-    reward: "6-as: -50%"
+    reward: rewardText
   });
+
+  if(!data || !data.card) throw new Error("Nėra kortelės atsakyme");
+
   cardId = data.card.id;
-  render(data.card.stamps);
+  target = data.card.target ?? 5;
+
+  render(Number(data.card.stamps || 0));
 }
 
 document.getElementById("savePhone").onclick = async () => {
-  const phone = document.getElementById("phone").value.trim();
-  const msg = document.getElementById("msg");
+  msgEl.innerHTML = "";
+  const phone = normPhone(document.getElementById("phone").value);
+
   try{
-    await load(phone || null);
-    msg.innerHTML = "<span class='ok'>Išsaugota</span>";
+    await load(phone);
+    msgEl.innerHTML = "<span class='ok'>Išsaugota</span>";
   }catch(e){
-    msg.innerHTML = "<span class='err'>Klaida</span>";
+    msgEl.innerHTML = "<span class='err'>Klaida: " + (e?.message || e) + "</span>";
   }
 };
 
 document.getElementById("add").onclick = async () => {
-  const pin = document.getElementById("pin").value.trim();
-  const staffMsg = document.getElementById("staffMsg");
+  staffMsgEl.innerHTML = "";
+  const pin = (document.getElementById("pin").value || "").trim();
+
   if(!cardId){
-    staffMsg.innerHTML = "<span class='err'>Nėra kortelės</span>";
+    staffMsgEl.innerHTML = "<span class='err'>Pirma sukurk kortelę (įvesk tel. arba palik tuščią ir spausk „Išsaugoti“)</span>";
     return;
   }
-  const data = await api(FN_ADD_STAMP,{
-    card_id: cardId,
-    pin: pin
-  });
-  render(data.card.stamps);
-  staffMsg.innerHTML = "<span class='ok'>Pridėta</span>";
+  if(!pin){
+    staffMsgEl.innerHTML = "<span class='err'>Įvesk PIN</span>";
+    return;
+  }
+
+  try{
+    const data = await api(FN_ADD_STAMP, { card_id: cardId, pin });
+    if(!data || !data.card) throw new Error("Nėra kortelės atsakyme");
+    render(Number(data.card.stamps || 0));
+    staffMsgEl.innerHTML = "<span class='ok'>Pridėta</span>";
+  }catch(e){
+    staffMsgEl.innerHTML = "<span class='err'>Klaida: " + (e?.message || e) + "</span>";
+  }
 };
 
-load(null);
+// užkraunam UI iš karto (be telefono)
+load(null).catch(()=>{ render(0); });
 </script>
 </body>
 </html>
