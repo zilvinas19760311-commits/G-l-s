@@ -102,11 +102,23 @@ async function api(url, body){
   const res = await fetch(url, {
     method: "POST",
     headers: {
-      "Content-Type":"application/json"
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": "Bearer " + SUPABASE_ANON_KEY
     },
     body: JSON.stringify(body)
   });
-  return res.json();
+
+ const text = await res.text();
+
+if (!res.ok) {
+  throw new Error(res.status + " " + res.statusText + " | " + text);
+}
+
+try {
+  return JSON.parse(text);
+} catch {
+  throw new Error("Ne JSON atsakymas: " + text);
 }
 
 async function load(phone){
